@@ -1,0 +1,107 @@
+{
+  "meta": {
+    "project_name": "平管管桥示例工程",
+    "project_code": "PPB-001",
+    "designer": "",
+    "notes": ""
+  },
+  "geometry": {
+    "span_m": 18.0,
+    "outer_diameter_mm": 1020.0,
+    "wall_thickness_mm": 12.0,
+    "corrosion_allowance_mm": 1.0,
+    "insulation_weight_kn_m": 0.4,
+    "lining_weight_kn_m": 0.0,
+    "attachments_weight_kn_m": 0.15,
+    "steel_density_kn_m3": 78.5,
+    "water_density_kn_m3": 10.0
+  },
+  "material": {
+    "steel_grade": "Q235",
+    "elastic_modulus_mpa": 206000.0,
+    "design_strength_mpa": 215.0,
+    "thermal_expansion_per_c": 1.2e-05,
+    "poisson_ratio": 0.3
+  },
+  "support_scheme": {
+    "support_type": "simple_simple",
+    "support_friction_coefficient": 0.15,
+    "has_expansion_joint": false,
+    "stiffener_spacing_mm": 3000.0,
+    "stiffener_equivalent_inertia_mm4": 42000000.0,
+    "shell_centroid_radius_mm": 510.0
+  },
+  "actions": {
+    "live_load_kn_m": 0.8,
+    "wind_load_kn_m": 1.2,
+    "design_internal_pressure_mpa": 0.9,
+    "working_internal_pressure_mpa": 0.6,
+    "vacuum_pressure_mpa": 0.05,
+    "closure_temperature_c": 10.0,
+    "service_temperature_min_c": -5.0,
+    "service_temperature_max_c": 35.0,
+    "flow_velocity_m_s": 2.5,
+    "water_unit_weight_kn_m3": 10.0,
+    "blocking_area_m2": 1.8,
+    "flow_coefficient": 1.47,
+    "ice_mode": "vertical",
+    "ice_width_m": 1.6,
+    "ice_thickness_m": 0.15,
+    "ice_strength_kn_m2": 750.0,
+    "ice_shape_coefficient": 0.9,
+    "ice_breaking_angle_deg": 60.0,
+    "drift_weight_kn": 12.0,
+    "drift_velocity_m_s": 3.0,
+    "drift_time_s": 1.0
+  },
+  "combination_factors": {
+    "importance_factor": 1.0,
+    "permanent_factor": 1.2,
+    "variable_factors": {
+      "live": 1.4,
+      "wind": 1.4,
+      "pressure": 1.3,
+      "temperature": 1.3,
+      "flow_pressure": 1.3,
+      "ice_pressure": 1.3,
+      "drift_impact": 1.3
+    },
+    "accompanying_factors": {
+      "live": 0.7,
+      "wind": 0.6,
+      "pressure": 0.7,
+      "temperature": 0.6,
+      "flow_pressure": 0.6,
+      "ice_pressure": 0.6,
+      "drift_impact": 0.6
+    },
+    "quasi_permanent_factors": {
+      "live": 0.4,
+      "wind": 0.0,
+      "pressure": 0.7,
+      "temperature": 0.5,
+      "flow_pressure": 0.0,
+      "ice_pressure": 0.0,
+      "drift_impact": 0.0
+    }
+  },
+  "pier_foundation": {
+    "base_length_m": 3.0,
+    "base_width_m": 4.0,
+    "allowable_bearing_kpa": 220.0,
+    "friction_coefficient": 0.45,
+    "required_sliding_safety": 1.2,
+    "foundation_self_weight_kn": 500.0,
+    "pier_self_weight_kn": 110.0,
+    "buoyancy_kn": 0.0,
+    "pipe_reaction_height_m": 2.2,
+    "hydraulic_force_height_m": 1.4,
+    "drift_force_height_m": 1.4,
+    "axial_force_height_m": 2.2,
+    "additional_vertical_kn": 0.0,
+    "additional_horizontal_x_kn": 0.0,
+    "additional_horizontal_y_kn": 0.0,
+    "additional_moment_x_kn_m": 0.0,
+    "additional_moment_y_kn_m": 0.0
+  }
+}
