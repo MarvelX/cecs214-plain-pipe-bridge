@@ -183,3 +183,17 @@ def test_long_term_combination_uses_quasi_permanent_pressure_value() -> None:
         * project.combination_factors.quasi_permanent_factors["pressure"]
     )
     assert combo["axial_stress_mpa"] == pytest.approx(expected)
+
+
+def test_default_project_input_matches_template_project_shape() -> None:
+    project = default_project_input().to_dict()
+
+    assert set(project) == {
+        "meta",
+        "geometry",
+        "material",
+        "support_scheme",
+        "actions",
+        "combination_factors",
+        "pier_foundation",
+    }
