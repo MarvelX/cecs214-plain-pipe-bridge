@@ -16,6 +16,15 @@ DEFAULT_UI_PREFERENCES = {
     "sidebar_tips_expanded": True,
 }
 
+VALID_RESULTS_TAB_KEYS = {
+    "summary",
+    "actions",
+    "forces",
+    "checks",
+    "formula",
+    "preview",
+}
+
 
 def build_builtin_template() -> dict[str, Any]:
     return {
@@ -34,16 +43,63 @@ def load_shared_template(path: Path) -> tuple[dict[str, Any], dict[str, str]]:
     except json.JSONDecodeError as exc:
         return builtin, {"source": "builtin", "error": str(exc)}
 
-    normalized = _normalize_template(raw, builtin)
-    _validate_project_defaults(normalized["project_defaults"])
+    try:
+        normalized = _normalize_template(raw, builtin)
+        normalized["ui_preferences"], ui_error = coerce_ui_preferences(
+            normalized["ui_preferences"], fallback=builtin["ui_preferences"]
+        )
+        if ui_error is not None:
+            raise ValueError(ui_error)
+        _validate_project_defaults(normalized["project_defaults"])
+    except (TypeError, ValueError) as exc:
+        return builtin, {"source": "builtin", "error": str(exc)}
+
     return normalized, {"source": "disk", "message": f"Loaded template: {path}"}
 
 
 def save_shared_template(path: Path, template: dict[str, Any]) -> None:
     normalized = _normalize_template(template, build_builtin_template())
+    normalized["ui_preferences"], ui_error = coerce_ui_preferences(normalized["ui_preferences"])
+    if ui_error is not None:
+        raise ValueError(ui_error)
     _validate_project_defaults(normalized["project_defaults"])
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(normalized, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def coerce_ui_preferences(
+    candidate: Any,
+    *,
+    fallback: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], str | None]:
+    base = deepcopy(DEFAULT_UI_PREFERENCES if fallback is None else fallback)
+    if candidate is None:
+        return base, None
+    if not isinstance(candidate, dict):
+        return base, "ui_preferences must be an object"
+
+    try:
+        results_tab = candidate.get("results_tab", base["results_tab"])
+        if results_tab not in VALID_RESULTS_TAB_KEYS:
+            raise ValueError(f"results_tab must be one of {sorted(VALID_RESULTS_TAB_KEYS)}")
+        base["results_tab"] = results_tab
+
+        preview_height = candidate.get("preview_height", base["preview_height"])
+        if isinstance(preview_height, bool) or not isinstance(preview_height, (int, float)):
+            raise ValueError("preview_height must be a number")
+        if preview_height <= 0:
+            raise ValueError("preview_height must be greater than zero")
+        base["preview_height"] = int(preview_height)
+
+        for key in ("show_formula_trace_expanded", "sidebar_tips_expanded"):
+            value = candidate.get(key, base[key])
+            if not isinstance(value, bool):
+                raise ValueError(f"{key} must be a boolean")
+            base[key] = value
+    except (TypeError, ValueError) as exc:
+        return deepcopy(DEFAULT_UI_PREFERENCES if fallback is None else fallback), str(exc)
+
+    return base, None
 
 
 def _validate_project_defaults(project_defaults: dict[str, Any]) -> None:

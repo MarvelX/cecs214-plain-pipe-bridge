@@ -52,6 +52,60 @@ def test_load_shared_template_falls_back_when_json_is_invalid(tmp_path: Path) ->
     assert "error" in status
 
 
+def test_load_shared_template_falls_back_when_project_defaults_are_invalid(tmp_path: Path) -> None:
+    path = tmp_path / "broken-project-defaults.json"
+    path.write_text(
+        """
+        {
+          "ui_preferences": {
+            "results_tab": "summary",
+            "preview_height": 900,
+            "show_formula_trace_expanded": false,
+            "sidebar_tips_expanded": true
+          },
+          "project_defaults": {
+            "support_scheme": {
+              "support_type": "invalid-support"
+            }
+          }
+        }
+        """.strip(),
+        encoding="utf-8",
+    )
+
+    template, status = load_shared_template(path)
+
+    assert status["source"] == "builtin"
+    assert "error" in status
+    assert template == build_builtin_template()
+
+
+def test_load_shared_template_falls_back_when_ui_preferences_are_invalid(tmp_path: Path) -> None:
+    path = tmp_path / "broken-ui-preferences.json"
+    path.write_text(
+        """
+        {
+          "ui_preferences": {
+            "results_tab": "not-a-real-tab",
+            "preview_height": 900,
+            "show_formula_trace_expanded": false,
+            "sidebar_tips_expanded": true
+          },
+          "project_defaults": {
+            "meta": {"project_name": "模板工程"}
+          }
+        }
+        """.strip(),
+        encoding="utf-8",
+    )
+
+    template, status = load_shared_template(path)
+
+    assert status["source"] == "builtin"
+    assert "error" in status
+    assert template == build_builtin_template()
+
+
 def test_save_shared_template_writes_normalized_json(tmp_path: Path) -> None:
     path = tmp_path / "shared_template.json"
     template = build_builtin_template()

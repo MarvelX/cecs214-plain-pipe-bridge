@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+from cecs214_plain_pipe import build_builtin_template
 from cecs214_plain_pipe.models import ProjectInput, project_input_from_dict
 from cecs214_plain_pipe.ui.form_sections import (
     render_actions_section,
@@ -13,7 +14,7 @@ from cecs214_plain_pipe.ui.form_sections import (
 )
 from cecs214_plain_pipe.ui.state import initialize_app_state, reset_template_to_builtin
 from cecs214_plain_pipe.ui.template_apply import APPLY_GROUPS, apply_template_groups, clear_calculation_outputs
-from cecs214_plain_pipe.ui.template_store import TEMPLATE_PATH, save_shared_template
+from cecs214_plain_pipe.ui.template_store import TEMPLATE_PATH, coerce_ui_preferences, save_shared_template
 
 
 RESULT_TAB_OPTIONS = [
@@ -30,6 +31,11 @@ def render_settings_page() -> None:
     initialize_app_state(st.session_state)
     template = st.session_state["shared_template"]
     status = st.session_state["shared_template_status"]
+    ui_preferences, ui_error = coerce_ui_preferences(
+        template.get("ui_preferences"),
+        fallback=build_builtin_template()["ui_preferences"],
+    )
+    template["ui_preferences"] = ui_preferences
 
     st.title("设置")
     st.caption(f"共享模板文件：{TEMPLATE_PATH} | 来源：{status['source']}")
@@ -37,6 +43,8 @@ def render_settings_page() -> None:
         st.caption(status["message"])
     if "error" in status:
         st.warning(f"模板读取失败，当前使用内置默认值：{status['error']}")
+    if ui_error is not None:
+        st.warning(f"界面默认值无效，已回退到内置默认值：{ui_error}")
 
     open_panel("界面偏好", "维护共享模板中的界面默认设置。")
     tab_keys = [key for key, _label in RESULT_TAB_OPTIONS]
@@ -74,10 +82,14 @@ def render_settings_page() -> None:
     template["project_defaults"] = defaults.to_dict()
 
     if save_pressed:
-        save_shared_template(TEMPLATE_PATH, template)
-        st.session_state["shared_template"] = template
-        st.session_state["shared_template_status"] = {"source": "disk", "message": f"Saved template: {TEMPLATE_PATH}"}
-        st.success("共享模板已保存。")
+        try:
+            save_shared_template(TEMPLATE_PATH, template)
+        except (TypeError, ValueError) as exc:
+            st.error(f"共享模板保存失败：{exc}")
+        else:
+            st.session_state["shared_template"] = template
+            st.session_state["shared_template_status"] = {"source": "disk", "message": f"Saved template: {TEMPLATE_PATH}"}
+            st.success("共享模板已保存。")
 
     if reset_pressed:
         reset_template_to_builtin(st.session_state)

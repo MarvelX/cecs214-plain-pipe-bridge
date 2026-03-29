@@ -1,3 +1,9 @@
+from cecs214_plain_pipe.ui.workspace_preferences import (
+    resolve_formula_trace_expanded,
+    resolve_preview_height,
+    resolve_result_view_key,
+    resolve_sidebar_tips_expanded,
+)
 from cecs214_plain_pipe.ui.state import initialize_app_state, mark_import_template_prompt, reset_template_to_builtin
 from cecs214_plain_pipe.models import default_project_input
 from cecs214_plain_pipe.ui.template_apply import (
@@ -5,7 +11,7 @@ from cecs214_plain_pipe.ui.template_apply import (
     apply_template_groups,
     clear_calculation_outputs,
 )
-from cecs214_plain_pipe.ui.template_store import build_builtin_template
+from cecs214_plain_pipe.ui.template_store import build_builtin_template, coerce_ui_preferences
 
 
 def test_apply_template_groups_updates_selected_project_sections_only() -> None:
@@ -77,3 +83,28 @@ def test_mark_import_template_prompt_sets_flag() -> None:
     mark_import_template_prompt(state, True)
 
     assert state["pending_import_template_prompt"] is True
+
+
+def test_workspace_ui_preferences_are_consumed_by_runtime_helpers() -> None:
+    ui_preferences = {
+        "results_tab": "checks",
+        "preview_height": 840,
+        "show_formula_trace_expanded": True,
+        "sidebar_tips_expanded": False,
+    }
+
+    assert resolve_result_view_key(ui_preferences) == "checks"
+    assert resolve_preview_height(ui_preferences) == 840
+    assert resolve_formula_trace_expanded(ui_preferences) is True
+    assert resolve_sidebar_tips_expanded(ui_preferences) is False
+
+
+def test_workspace_ui_preferences_fall_back_for_invalid_results_tab() -> None:
+    assert resolve_result_view_key({"results_tab": "not-a-real-tab"}) == "summary"
+
+
+def test_coerce_ui_preferences_falls_back_for_invalid_results_tab() -> None:
+    prefs, error = coerce_ui_preferences({"results_tab": "not-a-real-tab"})
+
+    assert prefs == build_builtin_template()["ui_preferences"]
+    assert error is not None

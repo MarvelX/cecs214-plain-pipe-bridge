@@ -4,6 +4,7 @@ import json
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import streamlit as st
 
@@ -15,6 +16,15 @@ if str(SRC) not in sys.path:
 from cecs214_plain_pipe import CalculationInputError, build_html_report, calculate_project, default_project_input, project_input_from_dict
 from cecs214_plain_pipe.models import ApplicableAction, ProjectInput, SupportType
 from cecs214_plain_pipe.ui import form_sections as fs
+from cecs214_plain_pipe.ui.workspace_preferences import (
+    RESULT_VIEW_KEYS,
+    RESULT_VIEW_LABELS,
+    resolve_formula_trace_expanded,
+    resolve_preview_height,
+    resolve_result_view_key,
+    resolve_sidebar_tips_expanded,
+    resolve_ui_preferences,
+)
 from cecs214_plain_pipe.ui.template_apply import APPLY_GROUPS, apply_template_groups, clear_calculation_outputs
 from cecs214_plain_pipe.ui.state import initialize_app_state, mark_import_template_prompt
 
@@ -22,12 +32,12 @@ from cecs214_plain_pipe.ui.state import initialize_app_state, mark_import_templa
 def main() -> None:
     initialize_app_state(st.session_state)
     inject_custom_css()
-
     project = load_project_input()
     result = st.session_state.get("calculation_result")
 
     render_workspace_header(project, result)
     render_import_template_prompt()
+    st.session_state["ui_preferences"] = resolve_ui_preferences(st.session_state.get("ui_preferences"))
     open_panel("参数录入", "按工程流程录入几何、材料、荷载和支墩基础参数。")
     with st.form("plain_pipe_form"):
         edited = render_project_form(project)
@@ -50,6 +60,7 @@ def main() -> None:
         render_results(
             project_input_from_dict(st.session_state["project_input"]),
             st.session_state["calculation_result"],
+            st.session_state["ui_preferences"],
         )
     else:
         render_empty_state()
@@ -75,16 +86,7 @@ def load_project_input() -> ProjectInput:
         if "input_error" in st.session_state:
             st.error(f"导入 JSON 失败：{st.session_state['input_error']}")
 
-        st.markdown("### 使用提示")
-        st.markdown(
-            "\n".join(
-                [
-                    "- 先录入几何与材料，再补荷载和支墩参数。",
-                    "- 计算失败时，下方结果区会显示必须修正的输入错误。",
-                    "- 计算通过后，可直接导出 JSON 和 HTML 计算书。",
-                ]
-            )
-        )
+        render_sidebar_tips(st.session_state.get("ui_preferences"))
 
     try:
         return project_input_from_dict(st.session_state["project_input"])
@@ -122,6 +124,19 @@ def render_import_template_prompt() -> None:
         st.success("共享模板已应用。")
     if col2.button("保留导入项目原值", use_container_width=True):
         st.session_state["pending_import_template_prompt"] = False
+
+
+def render_sidebar_tips(ui_preferences: dict[str, Any] | None) -> None:
+    with st.expander("使用提示", expanded=resolve_sidebar_tips_expanded(ui_preferences)):
+        st.markdown(
+            "\n".join(
+                [
+                    "- 先录入几何与材料，再补荷载和支墩参数。",
+                    "- 计算失败时，下方结果区会显示必须修正的输入错误。",
+                    "- 计算通过后，可直接导出 JSON 和 HTML 计算书。",
+                ]
+            )
+        )
 
 
 def _legacy_render_project_form(project: ProjectInput) -> ProjectInput:
@@ -275,7 +290,7 @@ def render_factor_editor(title: str, values: dict[str, float]) -> None:
         )
 
 
-def render_results(project: ProjectInput, result: dict) -> None:
+def render_results(project: ProjectInput, result: dict, ui_preferences: dict[str, Any] | None) -> None:
     open_panel("结果工作区", "结果按复核顺序组织，可直接查看关键结论、公式追溯和计算书预览。")
     report_html = build_html_report(project, result)
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -297,29 +312,33 @@ def render_results(project: ProjectInput, result: dict) -> None:
     if result["validation_messages"]:
         st.warning("输入存在提示项，请结合下方结果复核。")
 
-    tabs = st.tabs(["输入摘要", "作用与组合", "内力与应力", "验算结论", "公式追溯", "计算书预览"])
+    selected_view = st.radio(
+        "结果视图",
+        options=RESULT_VIEW_KEYS,
+        format_func=lambda key: RESULT_VIEW_LABELS[key],
+        index=RESULT_VIEW_KEYS.index(resolve_result_view_key(ui_preferences)),
+        horizontal=True,
+        key="workspace-result-view",
+    )
 
-    with tabs[0]:
+    if selected_view == "summary":
         render_input_summary(project)
-
-    with tabs[1]:
+    elif selected_view == "actions":
         st.subheader("作用取值")
         st.dataframe(build_action_rows(result["action_values"]), use_container_width=True, hide_index=True)
         st.subheader("作用组合")
         st.dataframe(build_combination_rows(result["combinations"]), use_container_width=True, hide_index=True)
-        with st.expander("展开查看组合分项明细", expanded=False):
+        with st.expander("展开查看组合分项明细", expanded=resolve_formula_trace_expanded(ui_preferences)):
             for combo in result["formula_trace"]["combinations"]:
                 st.markdown(f"**{combo['name']}**")
                 st.caption(combo["formula"])
                 st.dataframe(combo["details"], use_container_width=True, hide_index=True)
-
-    with tabs[2]:
+    elif selected_view == "forces":
         st.subheader("平管内力")
         st.dataframe(build_internal_force_rows(result["internal_forces"]), use_container_width=True, hide_index=True)
         st.subheader("强度控制")
         st.dataframe(result["stress_checks"]["rows"], use_container_width=True, hide_index=True)
-
-    with tabs[3]:
+    elif selected_view == "checks":
         st.subheader("稳定与挠度")
         col1, col2 = st.columns(2)
         col1.dataframe([result["stability_checks"]], use_container_width=True, hide_index=True)
@@ -330,12 +349,10 @@ def render_results(project: ProjectInput, result: dict) -> None:
         left_col.dataframe(result["pier_checks"]["details"]["left_pier"], use_container_width=True, hide_index=True)
         right_col.markdown("**右支墩**")
         right_col.dataframe(result["pier_checks"]["details"]["right_pier"], use_container_width=True, hide_index=True)
-
-    with tabs[4]:
-        render_formula_trace(result["formula_trace"])
-
-    with tabs[5]:
-        st.components.v1.html(report_html, height=900, scrolling=True)
+    elif selected_view == "formula":
+        render_formula_trace(result["formula_trace"], expanded=resolve_formula_trace_expanded(ui_preferences))
+    else:
+        st.components.v1.html(report_html, height=resolve_preview_height(ui_preferences), scrolling=True)
     close_panel()
 
 
@@ -523,7 +540,7 @@ def build_internal_force_rows(rows: list[dict]) -> list[dict]:
     ]
 
 
-def render_formula_trace(trace: dict) -> None:
+def render_formula_trace(trace: dict, *, expanded: bool = False) -> None:
     st.subheader("截面参数公式")
     for item in trace["section"]:
         render_formula_card(item["title"], item["clause"], item["formula"], item["substitution"], item["result"])
@@ -534,19 +551,19 @@ def render_formula_trace(trace: dict) -> None:
 
     st.subheader("组合公式")
     for item in trace["combinations"]:
-        with st.expander(item["name"], expanded=False):
+        with st.expander(item["name"], expanded=expanded):
             render_formula_card("组合总式", item["combo_type"], item["formula"], item["substitution"], item["result"])
             st.dataframe(item["details"], use_container_width=True, hide_index=True)
 
     st.subheader("内力公式")
     for item in trace["internal_forces"]:
-        with st.expander(item["name"], expanded=False):
+        with st.expander(item["name"], expanded=expanded):
             for formula in item["formulae"]:
                 render_formula_card(formula["title"], "", formula["formula"], formula["substitution"], formula["result"])
 
     st.subheader("强度验算公式")
     for item in trace["stress"]:
-        with st.expander(item["name"], expanded=False):
+        with st.expander(item["name"], expanded=expanded):
             for formula in item["formulae"]:
                 render_formula_card(formula["title"], item["status"], formula["formula"], formula["substitution"], formula["result"])
 
@@ -560,7 +577,7 @@ def render_formula_trace(trace: dict) -> None:
     for side_key, side_label in (("left_pier", "左支墩"), ("right_pier", "右支墩")):
         st.markdown(f"**{side_label}**")
         for item in trace["piers"][side_key]:
-            with st.expander(item["name"], expanded=False):
+            with st.expander(item["name"], expanded=expanded):
                 for formula in item["formulae"]:
                     render_formula_card(formula["title"], item["status"], formula["formula"], formula["substitution"], formula["result"])
 
