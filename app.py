@@ -15,6 +15,7 @@ if str(SRC) not in sys.path:
 from cecs214_plain_pipe import CalculationInputError, build_html_report, calculate_project, default_project_input, project_input_from_dict
 from cecs214_plain_pipe.models import ApplicableAction, ProjectInput, SupportType
 from cecs214_plain_pipe.ui import form_sections as fs
+from cecs214_plain_pipe.ui.template_apply import APPLY_GROUPS, apply_template_groups, clear_calculation_outputs
 from cecs214_plain_pipe.ui.state import initialize_app_state, mark_import_template_prompt
 
 
@@ -26,6 +27,7 @@ def main() -> None:
     result = st.session_state.get("calculation_result")
 
     render_workspace_header(project, result)
+    render_import_template_prompt()
     open_panel("参数录入", "按工程流程录入几何、材料、荷载和支墩基础参数。")
     with st.form("plain_pipe_form"):
         edited = render_project_form(project)
@@ -90,6 +92,36 @@ def load_project_input() -> ProjectInput:
         fallback_payload = st.session_state.get("shared_template", {}).get("project_defaults", default_project.to_dict())
         st.session_state["project_input"] = fallback_payload
         return project_input_from_dict(st.session_state["project_input"])
+
+
+def render_import_template_prompt() -> None:
+    if not st.session_state.get("pending_import_template_prompt"):
+        return
+
+    st.info("项目已导入。是否将共享模板重新应用到当前工程？")
+    default_selected = [key for key, _label in APPLY_GROUPS if key != "ui_preferences"]
+    selected = st.multiselect(
+        "选择要覆盖的模板分组",
+        options=[key for key, _label in APPLY_GROUPS],
+        default=default_selected,
+        format_func=lambda key: dict(APPLY_GROUPS)[key],
+        key="workspace-import-template-groups",
+    )
+    col1, col2 = st.columns(2)
+    if col1.button("应用模板到当前工程", use_container_width=True):
+        updated_project, updated_ui = apply_template_groups(
+            project=st.session_state["project_input"],
+            ui_preferences=st.session_state["ui_preferences"],
+            template=st.session_state["shared_template"],
+            selected_groups=selected,
+        )
+        st.session_state["project_input"] = updated_project
+        st.session_state["ui_preferences"] = updated_ui
+        clear_calculation_outputs(st.session_state)
+        st.session_state["pending_import_template_prompt"] = False
+        st.success("共享模板已应用。")
+    if col2.button("保留导入项目原值", use_container_width=True):
+        st.session_state["pending_import_template_prompt"] = False
 
 
 def _legacy_render_project_form(project: ProjectInput) -> ProjectInput:

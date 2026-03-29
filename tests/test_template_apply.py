@@ -1,4 +1,4 @@
-from cecs214_plain_pipe.ui.state import initialize_app_state
+from cecs214_plain_pipe.ui.state import initialize_app_state, mark_import_template_prompt, reset_template_to_builtin
 from cecs214_plain_pipe.models import default_project_input
 from cecs214_plain_pipe.ui.template_apply import (
     APPLY_GROUPS,
@@ -61,3 +61,19 @@ def test_initialize_app_state_seeds_project_and_ui_preferences() -> None:
     assert "project_input" in state
     assert "ui_preferences" in state
     assert state["pending_import_template_prompt"] is False
+
+
+def test_reset_template_to_builtin_replaces_shared_template() -> None:
+    state = {"shared_template": {"ui_preferences": {"preview_height": 500}, "project_defaults": {}}}
+
+    reset_template_to_builtin(state)
+
+    assert state["shared_template"] == build_builtin_template()
+
+
+def test_mark_import_template_prompt_sets_flag() -> None:
+    state: dict[str, object] = {}
+
+    mark_import_template_prompt(state, True)
+
+    assert state["pending_import_template_prompt"] is True
