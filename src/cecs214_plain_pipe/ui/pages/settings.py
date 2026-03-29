@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import streamlit as st
 
-from cecs214_plain_pipe import build_builtin_template
 from cecs214_plain_pipe.models import ProjectInput, project_input_from_dict
 from cecs214_plain_pipe.ui.form_sections import (
     render_actions_section,
@@ -12,9 +11,15 @@ from cecs214_plain_pipe.ui.form_sections import (
     render_pier_foundation_section,
     render_support_section,
 )
-from cecs214_plain_pipe.ui.state import initialize_app_state, reset_template_to_builtin
+from cecs214_plain_pipe.ui.settings_helpers import (
+    SETTINGS_TEMPLATE_DRAFT_KEY,
+    load_settings_template_draft,
+    reset_settings_template_to_builtin,
+    save_settings_template_draft,
+)
+from cecs214_plain_pipe.ui.state import initialize_app_state
 from cecs214_plain_pipe.ui.template_apply import APPLY_GROUPS, apply_template_groups, clear_calculation_outputs
-from cecs214_plain_pipe.ui.template_store import TEMPLATE_PATH, coerce_ui_preferences, save_shared_template
+from cecs214_plain_pipe.ui.template_store import TEMPLATE_PATH
 
 
 RESULT_TAB_OPTIONS = [
@@ -29,13 +34,8 @@ RESULT_TAB_OPTIONS = [
 
 def render_settings_page() -> None:
     initialize_app_state(st.session_state)
-    template = st.session_state["shared_template"]
+    template, draft_error = load_settings_template_draft(st.session_state)
     status = st.session_state["shared_template_status"]
-    ui_preferences, ui_error = coerce_ui_preferences(
-        template.get("ui_preferences"),
-        fallback=build_builtin_template()["ui_preferences"],
-    )
-    template["ui_preferences"] = ui_preferences
 
     st.title("设置")
     st.caption(f"共享模板文件：{TEMPLATE_PATH} | 来源：{status['source']}")
@@ -43,8 +43,8 @@ def render_settings_page() -> None:
         st.caption(status["message"])
     if "error" in status:
         st.warning(f"模板读取失败，当前使用内置默认值：{status['error']}")
-    if ui_error is not None:
-        st.warning(f"界面默认值无效，已回退到内置默认值：{ui_error}")
+    if draft_error is not None:
+        st.warning(f"当前编辑草稿已重置为可用版本：{draft_error}")
 
     open_panel("界面偏好", "维护共享模板中的界面默认设置。")
     tab_keys = [key for key, _label in RESULT_TAB_OPTIONS]
@@ -80,19 +80,19 @@ def render_settings_page() -> None:
     close_panel()
 
     template["project_defaults"] = defaults.to_dict()
+    st.session_state[SETTINGS_TEMPLATE_DRAFT_KEY] = template.copy()
 
     if save_pressed:
         try:
-            save_shared_template(TEMPLATE_PATH, template)
+            save_settings_template_draft(st.session_state, TEMPLATE_PATH)
         except (TypeError, ValueError) as exc:
             st.error(f"共享模板保存失败：{exc}")
         else:
-            st.session_state["shared_template"] = template
-            st.session_state["shared_template_status"] = {"source": "disk", "message": f"Saved template: {TEMPLATE_PATH}"}
+            st.session_state[SETTINGS_TEMPLATE_DRAFT_KEY] = st.session_state["shared_template"].copy()
             st.success("共享模板已保存。")
 
     if reset_pressed:
-        reset_template_to_builtin(st.session_state)
+        reset_settings_template_to_builtin(st.session_state)
         st.rerun()
 
     open_panel("应用到当前工程", "按分组把共享模板重新应用到当前 session，不会自动保存工程文件。")
