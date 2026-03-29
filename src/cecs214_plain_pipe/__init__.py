@@ -9,6 +9,7 @@ from .models import (
     project_input_from_dict,
 )
 from .reporting import build_html_report
+from .ui.template_store import build_builtin_template, load_shared_template, save_shared_template
 
 __all__ = [
     "ApplicableAction",
@@ -18,7 +19,10 @@ __all__ = [
     "ProjectInput",
     "SupportType",
     "build_html_report",
+    "build_builtin_template",
     "calculate_project",
     "default_project_input",
+    "load_shared_template",
     "project_input_from_dict",
+    "save_shared_template",
 ]
