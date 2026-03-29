@@ -20,13 +20,17 @@ st.set_page_config(page_title="平管管桥计算软件", layout="wide")
 
 
 def main() -> None:
-    st.title("平管管桥计算软件")
-    st.caption("依据 CECS 214:2006 平管相关条文进行作用、组合、内力、强度、稳定、挠度和支墩验算。")
+    inject_custom_css()
 
     project = load_project_input()
+    result = st.session_state.get("calculation_result")
+
+    render_workspace_header(project, result)
+    open_panel("参数录入", "按工程流程录入几何、材料、荷载和支墩基础参数。")
     with st.form("plain_pipe_form"):
         edited = render_project_form(project)
-        submitted = st.form_submit_button("计算", use_container_width=True, type="primary")
+        submitted = st.form_submit_button("开始计算", use_container_width=True, type="primary")
+    close_panel()
 
     if submitted:
         st.session_state["project_input"] = edited.to_dict()
@@ -38,16 +42,15 @@ def main() -> None:
             st.session_state.pop("calculation_result", None)
 
     if "calculation_error" in st.session_state:
-        for message in st.session_state["calculation_error"]["errors"]:
-            st.error(message)
-        for message in st.session_state["calculation_error"]["warnings"]:
-            st.warning(message)
+        render_calculation_errors(st.session_state["calculation_error"])
 
     if "calculation_result" in st.session_state:
         render_results(
             project_input_from_dict(st.session_state["project_input"]),
             st.session_state["calculation_result"],
         )
+    else:
+        render_empty_state()
 
 
 def load_project_input() -> ProjectInput:
@@ -55,18 +58,32 @@ def load_project_input() -> ProjectInput:
     if "project_input" not in st.session_state:
         st.session_state["project_input"] = default_project.to_dict()
 
-    uploaded = st.file_uploader("导入项目 JSON", type=["json"])
-    if uploaded is not None:
-        try:
-            parsed = json.load(uploaded)
-            project = project_input_from_dict(parsed)
-            st.session_state["project_input"] = project.to_dict()
-            st.session_state.pop("input_error", None)
-        except (json.JSONDecodeError, TypeError, ValueError) as exc:
-            st.session_state["input_error"] = str(exc)
+    with st.sidebar:
+        st.markdown("### 工程文件")
+        st.caption("导入已有项目 JSON，或继续编辑当前参数。")
+        uploaded = st.file_uploader("导入项目 JSON", type=["json"], label_visibility="collapsed")
+        if uploaded is not None:
+            try:
+                parsed = json.load(uploaded)
+                project = project_input_from_dict(parsed)
+                st.session_state["project_input"] = project.to_dict()
+                st.session_state.pop("input_error", None)
+            except (json.JSONDecodeError, TypeError, ValueError) as exc:
+                st.session_state["input_error"] = str(exc)
 
-    if "input_error" in st.session_state:
-        st.error(f"导入 JSON 失败：{st.session_state['input_error']}")
+        if "input_error" in st.session_state:
+            st.error(f"导入 JSON 失败：{st.session_state['input_error']}")
+
+        st.markdown("### 使用提示")
+        st.markdown(
+            "\n".join(
+                [
+                    "- 先录入几何与材料，再补荷载和支墩参数。",
+                    "- 计算失败时，下方结果区会显示必须修正的输入错误。",
+                    "- 计算通过后，可直接导出 JSON 和 HTML 计算书。",
+                ]
+            )
+        )
 
     try:
         return project_input_from_dict(st.session_state["project_input"])
@@ -76,6 +93,7 @@ def load_project_input() -> ProjectInput:
 
 
 def render_project_form(project: ProjectInput) -> ProjectInput:
+    st.markdown('<div class="form-stack">', unsafe_allow_html=True)
     with st.expander("1. 工程信息", expanded=True):
         col1, col2, col3 = st.columns(3)
         project.meta.project_name = col1.text_input("工程名称", value=project.meta.project_name)
@@ -195,11 +213,12 @@ def render_project_form(project: ProjectInput) -> ProjectInput:
         project.pier_foundation.additional_moment_x_kn_m = col4.number_input("附加 X 向弯矩 (kN·m)", value=float(project.pier_foundation.additional_moment_x_kn_m), step=5.0)
         project.pier_foundation.additional_moment_y_kn_m = st.number_input("附加 Y 向弯矩 (kN·m)", value=float(project.pier_foundation.additional_moment_y_kn_m), step=5.0)
 
+    st.markdown("</div>", unsafe_allow_html=True)
     return project
 
 
 def render_factor_editor(title: str, values: dict[str, float]) -> None:
-    st.markdown(f"**{title}**")
+    st.markdown(f'<div class="subsection-label">{title}</div>', unsafe_allow_html=True)
     actions = [
         ApplicableAction.LIVE,
         ApplicableAction.WIND,
@@ -221,6 +240,7 @@ def render_factor_editor(title: str, values: dict[str, float]) -> None:
 
 
 def render_results(project: ProjectInput, result: dict) -> None:
+    open_panel("结果工作区", "结果按复核顺序组织，可直接查看关键结论、公式追溯和计算书预览。")
     report_html = build_html_report(project, result)
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
 
@@ -280,6 +300,7 @@ def render_results(project: ProjectInput, result: dict) -> None:
 
     with tabs[5]:
         st.components.v1.html(report_html, height=900, scrolling=True)
+    close_panel()
 
 
 def build_action_rows(rows: list[dict]) -> list[dict]:
@@ -513,6 +534,334 @@ def render_formula_card(title: str, clause: str, formula: str, substitution: str
     if clause:
         st.caption(clause)
     st.code(f"公式: {formula}\n代入: {substitution}\n结果: {result}", language="text")
+
+
+def render_workspace_header(project: ProjectInput, result: dict | None) -> None:
+    status_line = "等待计算" if result is None else "已生成最新结果"
+    stress_value = "-"
+    deflection_value = "-"
+    pier_value = "-"
+    if result is not None:
+        stress_value = f"{result['stress_checks']['governing']['equivalent_stress_mpa']:.2f} MPa"
+        deflection_value = f"{result['deflection_check']['deflection_mm']:.2f} mm"
+        pier_value = f"{result['pier_checks']['governing']['left_pier']['qmax_kpa']:.2f} kPa"
+
+    st.markdown(
+        f"""
+        <section class="workspace-hero">
+          <div class="hero-copy">
+            <p class="eyebrow">CECS 214:2006 · 平管工作台</p>
+            <h1>{project.meta.project_name}</h1>
+            <p class="hero-note">面向复核的平管管桥计算界面，参数录入、组合验算、公式追溯和计算书输出保持在同一工作面。</p>
+          </div>
+          <div class="hero-meta">
+            <div class="hero-meta-row"><span>工程编号</span><strong>{project.meta.project_code}</strong></div>
+            <div class="hero-meta-row"><span>支承形式</span><strong>{project.support_scheme.support_type.label}</strong></div>
+            <div class="hero-meta-row"><span>当前状态</span><strong>{status_line}</strong></div>
+          </div>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        f"""
+        <section class="metric-ribbon">
+          <div class="metric-tile"><span>控制应力</span><strong>{stress_value}</strong></div>
+          <div class="metric-tile"><span>控制挠度</span><strong>{deflection_value}</strong></div>
+          <div class="metric-tile"><span>左支墩 qmax</span><strong>{pier_value}</strong></div>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_calculation_errors(error_state: dict) -> None:
+    open_panel("输入校验", "当前参数包含必须修正的问题，系统已阻断计算。")
+    for message in error_state["errors"]:
+        st.error(message)
+    for message in error_state["warnings"]:
+        st.warning(message)
+    close_panel()
+
+
+def render_empty_state() -> None:
+    st.markdown(
+        """
+        <section class="empty-stage">
+          <div class="empty-stage-copy">
+            <p class="eyebrow">结果区</p>
+            <h2>先完成一次计算</h2>
+            <p>左侧参数录入完成后点击“开始计算”，右侧会生成组合、内力、验算结论、公式追溯和计算书预览。</p>
+          </div>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def open_panel(title: str, description: str) -> None:
+    st.markdown(
+        f"""
+        <section class="workspace-panel">
+          <div class="panel-head">
+            <div>
+              <h2>{title}</h2>
+              <p>{description}</p>
+            </div>
+          </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def close_panel() -> None:
+    st.markdown("</section>", unsafe_allow_html=True)
+
+
+def inject_custom_css() -> None:
+    st.markdown(
+        """
+        <style>
+          :root {
+            --bg-0: #f3efe7;
+            --bg-1: #fbf8f2;
+            --ink-0: #14202b;
+            --ink-1: #50606f;
+            --line-0: rgba(34, 43, 53, 0.12);
+            --line-1: rgba(159, 119, 54, 0.22);
+            --accent: #9a6a24;
+            --accent-soft: #efe0c8;
+            --hero: linear-gradient(135deg, #172533 0%, #21384a 38%, #82603a 100%);
+          }
+          .stApp {
+            background:
+              radial-gradient(circle at top left, rgba(154, 106, 36, 0.12), transparent 26%),
+              linear-gradient(180deg, #f1ece3 0%, #f7f4ee 30%, #f8f6f2 100%);
+            color: var(--ink-0);
+          }
+          [data-testid="stHeader"] {
+            background: rgba(248, 246, 242, 0.72);
+            backdrop-filter: blur(12px);
+          }
+          [data-testid="stSidebar"] {
+            background: linear-gradient(180deg, #f5efe4 0%, #f7f3eb 100%);
+            border-right: 1px solid var(--line-0);
+          }
+          [data-testid="stSidebar"] > div:first-child {
+            padding-top: 1.2rem;
+          }
+          .block-container {
+            padding-top: 1.2rem;
+            padding-bottom: 3rem;
+            max-width: 1460px;
+          }
+          .workspace-hero {
+            display: grid;
+            grid-template-columns: 1.5fr 0.8fr;
+            gap: 1rem;
+            padding: 1.4rem 1.5rem;
+            margin-bottom: 1rem;
+            border-radius: 26px;
+            background: var(--hero);
+            color: #f9f5ee;
+            box-shadow: 0 18px 40px rgba(23, 37, 51, 0.16);
+            animation: riseIn 420ms ease-out;
+          }
+          .workspace-hero h1 {
+            margin: 0.2rem 0 0.5rem;
+            font-size: clamp(2rem, 3.6vw, 3.3rem);
+            line-height: 0.98;
+            letter-spacing: -0.03em;
+          }
+          .eyebrow {
+            margin: 0;
+            font-size: 0.82rem;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            opacity: 0.72;
+          }
+          .hero-note {
+            max-width: 44rem;
+            margin: 0;
+            font-size: 0.98rem;
+            color: rgba(249, 245, 238, 0.85);
+          }
+          .hero-meta {
+            display: grid;
+            gap: 0.75rem;
+            align-content: end;
+          }
+          .hero-meta-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 1rem;
+            padding-top: 0.65rem;
+            border-top: 1px solid rgba(255, 248, 238, 0.18);
+          }
+          .hero-meta-row span {
+            color: rgba(249, 245, 238, 0.65);
+          }
+          .hero-meta-row strong {
+            font-weight: 600;
+          }
+          .metric-ribbon {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.85rem;
+            margin-bottom: 1.2rem;
+            animation: fadeSlide 520ms ease-out;
+          }
+          .metric-tile {
+            padding: 1rem 1.05rem;
+            border-radius: 18px;
+            background: rgba(255, 252, 246, 0.88);
+            border: 1px solid var(--line-1);
+            box-shadow: 0 10px 26px rgba(20, 32, 43, 0.05);
+          }
+          .metric-tile span {
+            display: block;
+            margin-bottom: 0.35rem;
+            font-size: 0.84rem;
+            color: var(--ink-1);
+          }
+          .metric-tile strong {
+            font-size: 1.1rem;
+            color: var(--ink-0);
+          }
+          .workspace-panel {
+            padding: 1.1rem 1.1rem 1.2rem;
+            margin-bottom: 1rem;
+            border: 1px solid var(--line-0);
+            border-radius: 24px;
+            background: rgba(255, 253, 248, 0.88);
+            box-shadow: 0 16px 30px rgba(20, 32, 43, 0.05);
+            animation: fadeSlide 520ms ease-out;
+          }
+          .panel-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            gap: 1rem;
+            margin-bottom: 0.8rem;
+          }
+          .panel-head h2 {
+            margin: 0;
+            font-size: 1.2rem;
+            letter-spacing: -0.02em;
+          }
+          .panel-head p {
+            margin: 0.28rem 0 0;
+            color: var(--ink-1);
+            font-size: 0.92rem;
+          }
+          .empty-stage {
+            min-height: 420px;
+            display: grid;
+            place-items: center;
+            padding: 2.4rem 1.2rem;
+            border: 1px dashed var(--line-1);
+            border-radius: 28px;
+            background:
+              radial-gradient(circle at top right, rgba(154, 106, 36, 0.08), transparent 25%),
+              rgba(255, 252, 247, 0.74);
+            animation: fadeSlide 520ms ease-out;
+          }
+          .empty-stage-copy {
+            max-width: 28rem;
+            text-align: center;
+          }
+          .empty-stage-copy h2 {
+            margin: 0.2rem 0 0.55rem;
+            font-size: 1.8rem;
+          }
+          .empty-stage-copy p {
+            margin: 0;
+            color: var(--ink-1);
+          }
+          .subsection-label {
+            margin: 0.45rem 0 0.5rem;
+            color: var(--accent);
+            font-size: 0.82rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            font-weight: 700;
+          }
+          .stButton > button,
+          .stDownloadButton > button,
+          [data-testid="stFormSubmitButton"] > button {
+            border-radius: 999px;
+            border: 1px solid rgba(154, 106, 36, 0.18);
+            background: linear-gradient(180deg, #b27b2f 0%, #8c6023 100%);
+            color: #fffaf2;
+            font-weight: 600;
+            transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease;
+            box-shadow: 0 10px 24px rgba(154, 106, 36, 0.18);
+          }
+          .stDownloadButton > button {
+            background: linear-gradient(180deg, #fffaf2 0%, #f5e6ce 100%);
+            color: var(--ink-0);
+          }
+          .stButton > button:hover,
+          .stDownloadButton > button:hover,
+          [data-testid="stFormSubmitButton"] > button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 16px 30px rgba(20, 32, 43, 0.10);
+            filter: saturate(1.04);
+          }
+          [data-testid="stExpander"] {
+            border: 1px solid rgba(34, 43, 53, 0.09);
+            border-radius: 18px;
+            background: rgba(255, 253, 249, 0.85);
+            overflow: hidden;
+          }
+          [data-testid="stExpander"] details summary {
+            padding-top: 0.15rem;
+            padding-bottom: 0.15rem;
+          }
+          [data-testid="stTabs"] [data-baseweb="tab-list"] {
+            gap: 0.45rem;
+            padding-bottom: 0.4rem;
+          }
+          [data-testid="stTabs"] [data-baseweb="tab"] {
+            height: 2.6rem;
+            border-radius: 999px;
+            padding-left: 1rem;
+            padding-right: 1rem;
+            background: rgba(239, 230, 214, 0.58);
+            color: var(--ink-1);
+          }
+          [data-testid="stTabs"] [aria-selected="true"] {
+            background: linear-gradient(180deg, #21384a 0%, #152634 100%);
+            color: #fff8ee !important;
+          }
+          [data-testid="stDataFrame"] {
+            border-radius: 18px;
+            overflow: hidden;
+            border: 1px solid rgba(34, 43, 53, 0.08);
+          }
+          .stCodeBlock {
+            border-radius: 18px;
+            border: 1px solid rgba(34, 43, 53, 0.08);
+          }
+          @keyframes riseIn {
+            from { opacity: 0; transform: translateY(10px) scale(0.992); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+          }
+          @keyframes fadeSlide {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+          }
+          @media (max-width: 1080px) {
+            .workspace-hero,
+            .metric-ribbon {
+              grid-template-columns: 1fr;
+            }
+          }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 if __name__ == "__main__":
