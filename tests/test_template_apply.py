@@ -1,3 +1,4 @@
+from cecs214_plain_pipe.ui.state import initialize_app_state
 from cecs214_plain_pipe.models import default_project_input
 from cecs214_plain_pipe.ui.template_apply import (
     APPLY_GROUPS,
@@ -50,3 +51,13 @@ def test_apply_groups_constant_matches_settings_ui_sections() -> None:
         ("combination_factors", "组合系数"),
         ("pier_foundation", "支墩基础参数"),
     ]
+
+
+def test_initialize_app_state_seeds_project_and_ui_preferences() -> None:
+    state: dict[str, object] = {}
+
+    initialize_app_state(state)
+
+    assert "project_input" in state
+    assert "ui_preferences" in state
+    assert state["pending_import_template_prompt"] is False

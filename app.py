@@ -14,12 +14,12 @@ if str(SRC) not in sys.path:
 
 from cecs214_plain_pipe import CalculationInputError, build_html_report, calculate_project, default_project_input, project_input_from_dict
 from cecs214_plain_pipe.models import ApplicableAction, ProjectInput, SupportType
-
-
-st.set_page_config(page_title="平管管桥计算软件", layout="wide")
+from cecs214_plain_pipe.ui import form_sections as fs
+from cecs214_plain_pipe.ui.state import initialize_app_state, mark_import_template_prompt
 
 
 def main() -> None:
+    initialize_app_state(st.session_state)
     inject_custom_css()
 
     project = load_project_input()
@@ -55,8 +55,6 @@ def main() -> None:
 
 def load_project_input() -> ProjectInput:
     default_project = default_project_input()
-    if "project_input" not in st.session_state:
-        st.session_state["project_input"] = default_project.to_dict()
 
     with st.sidebar:
         st.markdown("### 工程文件")
@@ -67,6 +65,7 @@ def load_project_input() -> ProjectInput:
                 parsed = json.load(uploaded)
                 project = project_input_from_dict(parsed)
                 st.session_state["project_input"] = project.to_dict()
+                mark_import_template_prompt(st.session_state, True)
                 st.session_state.pop("input_error", None)
             except (json.JSONDecodeError, TypeError, ValueError) as exc:
                 st.session_state["input_error"] = str(exc)
@@ -88,11 +87,12 @@ def load_project_input() -> ProjectInput:
     try:
         return project_input_from_dict(st.session_state["project_input"])
     except (TypeError, ValueError):
-        st.session_state["project_input"] = default_project.to_dict()
-        return default_project
+        fallback_payload = st.session_state.get("shared_template", {}).get("project_defaults", default_project.to_dict())
+        st.session_state["project_input"] = fallback_payload
+        return project_input_from_dict(st.session_state["project_input"])
 
 
-def render_project_form(project: ProjectInput) -> ProjectInput:
+def _legacy_render_project_form(project: ProjectInput) -> ProjectInput:
     st.markdown('<div class="form-stack">', unsafe_allow_html=True)
     with st.expander("1. 工程信息", expanded=True):
         col1, col2, col3 = st.columns(3)
@@ -215,6 +215,10 @@ def render_project_form(project: ProjectInput) -> ProjectInput:
 
     st.markdown("</div>", unsafe_allow_html=True)
     return project
+
+
+def render_project_form(project: ProjectInput) -> ProjectInput:
+    return fs.render_project_form(project, key_prefix="workspace")
 
 
 def render_factor_editor(title: str, values: dict[str, float]) -> None:
@@ -865,4 +869,5 @@ def inject_custom_css() -> None:
 
 
 if __name__ == "__main__":
+    st.set_page_config(page_title="平管管桥计算软件", layout="wide")
     main()
