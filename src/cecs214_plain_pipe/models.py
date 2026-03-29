@@ -241,6 +241,8 @@ def _serialize(value: Any) -> Any:
 
 
 def _coerce_dataclass(cls: Type[T], payload: Mapping[str, Any]) -> T:
+    if not isinstance(payload, Mapping):
+        raise TypeError(f"{cls.__name__} 的输入必须是对象。")
     values: Dict[str, Any] = {}
     type_hints = get_type_hints(cls)
     for field_info in fields(cls):
@@ -253,20 +255,29 @@ def _coerce_dataclass(cls: Type[T], payload: Mapping[str, Any]) -> T:
 
 
 def _coerce_value(annotation: Any, value: Any) -> Any:
+    if value is None:
+        raise TypeError("输入字段不能为 null。")
     origin = get_origin(annotation)
     if origin is None:
         if is_dataclass(annotation):
             return _coerce_dataclass(annotation, value)
         if isinstance(annotation, type) and issubclass(annotation, Enum):
-            return annotation(value)
+            try:
+                return annotation(value)
+            except ValueError as exc:
+                raise ValueError(f"{annotation.__name__} 不支持的取值: {value}") from exc
         return value
     if origin in (dict, Dict):
+        if not isinstance(value, dict):
+            raise TypeError("字典字段必须传入对象。")
         key_type, value_type = get_args(annotation)
         return {
             _coerce_value(key_type, key): _coerce_value(value_type, item)
             for key, item in value.items()
         }
     if origin in (list, List):
+        if not isinstance(value, list):
+            raise TypeError("列表字段必须传入数组。")
         inner_type = get_args(annotation)[0]
         return [_coerce_value(inner_type, item) for item in value]
     return value

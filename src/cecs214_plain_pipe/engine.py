@@ -23,6 +23,14 @@ class SupportCoefficients:
     axial_split: Tuple[float, float]
 
 
+class CalculationInputError(ValueError):
+    def __init__(self, errors: List[str], warnings: List[str] | None = None):
+        self.errors = errors
+        self.warnings = warnings or []
+        message = "；".join(errors)
+        super().__init__(message)
+
+
 @dataclass(frozen=True)
 class CombinationScenario:
     code: str
@@ -238,7 +246,10 @@ COMBINATION_SCENARIOS: Tuple[CombinationScenario, ...] = (
 
 
 def calculate_project(project: ProjectInput) -> CalculationResult:
-    validation_messages = validate_project_input(project)
+    validation = validate_project_input(project)
+    if validation["errors"]:
+        raise CalculationInputError(validation["errors"], validation["warnings"])
+    validation_messages = validation["warnings"]
     derived = _derive_section(project)
     action_values = _build_action_values(project, derived)
     combinations = _build_combinations(project, action_values)
@@ -286,19 +297,68 @@ def calculate_project(project: ProjectInput) -> CalculationResult:
     )
 
 
-def validate_project_input(project: ProjectInput) -> List[str]:
-    messages: List[str] = []
-    if project.geometry.wall_thickness_mm <= project.geometry.corrosion_allowance_mm:
-        messages.append("管壁厚度必须大于腐蚀裕量。")
-    if project.geometry.outer_diameter_mm <= 2.0 * project.geometry.wall_thickness_mm:
-        messages.append("管径与壁厚组合无效，内径不能小于等于零。")
+def validate_project_input(project: ProjectInput) -> Dict[str, List[str]]:
+    errors: List[str] = []
+    warnings: List[str] = []
+
+    effective_thickness_mm = project.geometry.wall_thickness_mm - project.geometry.corrosion_allowance_mm
+    inner_diameter_mm = project.geometry.outer_diameter_mm - 2.0 * effective_thickness_mm
+
     if project.geometry.span_m <= 0:
-        messages.append("跨径必须大于零。")
+        errors.append("跨径必须大于零。")
+    if project.geometry.wall_thickness_mm <= 0:
+        errors.append("管壁厚度必须大于零。")
+    if project.geometry.corrosion_allowance_mm < 0:
+        errors.append("腐蚀裕量不能小于零。")
+    if effective_thickness_mm <= 0:
+        errors.append("扣除腐蚀裕量后的有效壁厚必须大于零。")
+    if project.geometry.outer_diameter_mm <= 0:
+        errors.append("外径必须大于零。")
+    if inner_diameter_mm <= 0:
+        errors.append("截面几何无效：内径必须大于零。")
+    if project.geometry.steel_density_kn_m3 <= 0:
+        errors.append("钢材重度必须大于零。")
+    if project.geometry.water_density_kn_m3 <= 0:
+        errors.append("管内水重度必须大于零。")
     if project.material.elastic_modulus_mpa <= 0:
-        messages.append("钢材弹性模量必须大于零。")
+        errors.append("钢材弹性模量必须大于零。")
+    if project.material.design_strength_mpa <= 0:
+        errors.append("设计强度必须大于零。")
+    if not (0.0 <= project.material.poisson_ratio < 0.5):
+        errors.append("泊松比必须在 0 到 0.5 之间。")
+    if project.material.thermal_expansion_per_c < 0:
+        errors.append("线膨胀系数不能小于零。")
+    if project.actions.design_internal_pressure_mpa < 0 or project.actions.working_internal_pressure_mpa < 0:
+        errors.append("内水压力不能小于零。")
+    if project.actions.vacuum_pressure_mpa < 0:
+        errors.append("真空压力不能小于零。")
+    if project.actions.flow_velocity_m_s < 0:
+        errors.append("水流流速不能小于零。")
     if project.actions.drift_time_s <= 0:
-        messages.append("漂流物撞击时间必须大于零。")
-    return messages
+        errors.append("漂流物撞击时间必须大于零。")
+    if project.actions.ice_breaking_angle_deg < 0 or project.actions.ice_breaking_angle_deg > 180:
+        errors.append("破冰坡水平夹角必须在 0 到 180 度之间。")
+    if project.support_scheme.support_friction_coefficient < 0:
+        errors.append("支承摩擦系数不能小于零。")
+    if project.support_scheme.stiffener_spacing_mm < 0 or project.support_scheme.stiffener_equivalent_inertia_mm4 < 0:
+        errors.append("加劲环参数不能小于零。")
+    if project.support_scheme.shell_centroid_radius_mm < 0:
+        errors.append("等效形心半径不能小于零。")
+    if project.pier_foundation.base_length_m <= 0 or project.pier_foundation.base_width_m <= 0:
+        errors.append("基础平面尺寸必须大于零。")
+    if project.pier_foundation.allowable_bearing_kpa <= 0:
+        errors.append("地基承载力特征值必须大于零。")
+    if project.pier_foundation.friction_coefficient < 0:
+        errors.append("基础抗滑摩擦系数不能小于零。")
+    if project.pier_foundation.required_sliding_safety <= 0:
+        errors.append("抗滑稳定要求必须大于零。")
+
+    if project.actions.working_internal_pressure_mpa > project.actions.design_internal_pressure_mpa:
+        warnings.append("工作内水压力大于设计内水压力，请复核压力输入。")
+    if project.actions.vacuum_pressure_mpa == 0:
+        warnings.append("未启用真空压力，稳定验算将按满足处理。")
+
+    return {"errors": errors, "warnings": warnings}
 
 
 def _derive_section(project: ProjectInput) -> Dict[str, Any]:
@@ -306,6 +366,10 @@ def _derive_section(project: ProjectInput) -> Dict[str, Any]:
     thickness_mm = geometry.wall_thickness_mm - geometry.corrosion_allowance_mm
     outer_d_mm = geometry.outer_diameter_mm
     inner_d_mm = outer_d_mm - 2.0 * thickness_mm
+    if thickness_mm <= 0:
+        raise CalculationInputError(["扣除腐蚀裕量后的有效壁厚必须大于零。"])
+    if inner_d_mm <= 0:
+        raise CalculationInputError(["截面几何无效：内径必须大于零。"])
     outer_r_mm = outer_d_mm / 2.0
     inner_r_mm = inner_d_mm / 2.0
     area_mm2 = math.pi / 4.0 * (outer_d_mm**2 - inner_d_mm**2)

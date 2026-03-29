@@ -12,7 +12,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from cecs214_plain_pipe import build_html_report, calculate_project, default_project_input, project_input_from_dict
+from cecs214_plain_pipe import CalculationInputError, build_html_report, calculate_project, default_project_input, project_input_from_dict
 from cecs214_plain_pipe.models import ApplicableAction, ProjectInput, SupportType
 
 
@@ -30,7 +30,18 @@ def main() -> None:
 
     if submitted:
         st.session_state["project_input"] = edited.to_dict()
-        st.session_state["calculation_result"] = calculate_project(edited).to_dict()
+        try:
+            st.session_state["calculation_result"] = calculate_project(edited).to_dict()
+            st.session_state.pop("calculation_error", None)
+        except CalculationInputError as exc:
+            st.session_state["calculation_error"] = {"errors": exc.errors, "warnings": exc.warnings}
+            st.session_state.pop("calculation_result", None)
+
+    if "calculation_error" in st.session_state:
+        for message in st.session_state["calculation_error"]["errors"]:
+            st.error(message)
+        for message in st.session_state["calculation_error"]["warnings"]:
+            st.warning(message)
 
     if "calculation_result" in st.session_state:
         render_results(
@@ -46,9 +57,22 @@ def load_project_input() -> ProjectInput:
 
     uploaded = st.file_uploader("导入项目 JSON", type=["json"])
     if uploaded is not None:
-        st.session_state["project_input"] = json.load(uploaded)
+        try:
+            parsed = json.load(uploaded)
+            project = project_input_from_dict(parsed)
+            st.session_state["project_input"] = project.to_dict()
+            st.session_state.pop("input_error", None)
+        except (json.JSONDecodeError, TypeError, ValueError) as exc:
+            st.session_state["input_error"] = str(exc)
 
-    return project_input_from_dict(st.session_state["project_input"])
+    if "input_error" in st.session_state:
+        st.error(f"导入 JSON 失败：{st.session_state['input_error']}")
+
+    try:
+        return project_input_from_dict(st.session_state["project_input"])
+    except (TypeError, ValueError):
+        st.session_state["project_input"] = default_project.to_dict()
+        return default_project
 
 
 def render_project_form(project: ProjectInput) -> ProjectInput:

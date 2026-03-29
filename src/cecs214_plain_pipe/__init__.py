@@ -1,4 +1,4 @@
-from .engine import calculate_project
+from .engine import CalculationInputError, calculate_project
 from .models import (
     ApplicableAction,
     CalculationResult,
@@ -12,6 +12,7 @@ from .reporting import build_html_report
 
 __all__ = [
     "ApplicableAction",
+    "CalculationInputError",
     "CalculationResult",
     "CheckResultStatus",
     "ProjectInput",
