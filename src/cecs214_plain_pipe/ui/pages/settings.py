@@ -75,8 +75,8 @@ def render_settings_page() -> None:
     open_panel("项目默认参数", "这些参数会写入仓库级共享模板，用于初始化新工程或重新应用到当前工程。")
     with st.form("settings_template_form"):
         defaults = render_project_defaults_form(defaults)
-        save_pressed = st.form_submit_button("保存模板", type="primary", use_container_width=True)
-        reset_pressed = st.form_submit_button("恢复内置默认模板", use_container_width=True)
+        save_pressed = st.form_submit_button("保存模板", type="primary", width="stretch")
+        reset_pressed = st.form_submit_button("恢复内置默认模板", width="stretch")
     close_panel()
 
     template["project_defaults"] = defaults.to_dict()
@@ -102,7 +102,7 @@ def render_settings_page() -> None:
         default=[key for key, _label in APPLY_GROUPS if key != "ui_preferences"],
         format_func=lambda key: dict(APPLY_GROUPS)[key],
     )
-    if st.button("应用模板到当前工程", use_container_width=True):
+    if st.button("应用模板到当前工程", width="stretch"):
         updated_project, updated_ui = apply_template_groups(
             project=st.session_state["project_input"],
             ui_preferences=st.session_state["ui_preferences"],

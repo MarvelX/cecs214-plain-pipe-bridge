@@ -41,7 +41,7 @@ def main() -> None:
     open_panel("参数录入", "按工程流程录入几何、材料、荷载和支墩基础参数。")
     with st.form("plain_pipe_form"):
         edited = render_project_form(project)
-        submitted = st.form_submit_button("开始计算", use_container_width=True, type="primary")
+        submitted = st.form_submit_button("开始计算", width="stretch", type="primary")
     close_panel()
 
     if submitted:
@@ -110,7 +110,7 @@ def render_import_template_prompt() -> None:
         key="workspace-import-template-groups",
     )
     col1, col2 = st.columns(2)
-    if col1.button("应用模板到当前工程", use_container_width=True):
+    if col1.button("应用模板到当前工程", width="stretch"):
         updated_project, updated_ui = apply_template_groups(
             project=st.session_state["project_input"],
             ui_preferences=st.session_state["ui_preferences"],
@@ -122,7 +122,7 @@ def render_import_template_prompt() -> None:
         clear_calculation_outputs(st.session_state)
         st.session_state["pending_import_template_prompt"] = False
         st.success("共享模板已应用。")
-    if col2.button("保留导入项目原值", use_container_width=True):
+    if col2.button("保留导入项目原值", width="stretch"):
         st.session_state["pending_import_template_prompt"] = False
 
 
@@ -325,30 +325,30 @@ def render_results(project: ProjectInput, result: dict, ui_preferences: dict[str
         render_input_summary(project)
     elif selected_view == "actions":
         st.subheader("作用取值")
-        st.dataframe(build_action_rows(result["action_values"]), use_container_width=True, hide_index=True)
+        st.dataframe(build_action_rows(result["action_values"]), hide_index=True)
         st.subheader("作用组合")
-        st.dataframe(build_combination_rows(result["combinations"]), use_container_width=True, hide_index=True)
+        st.dataframe(build_combination_rows(result["combinations"]), hide_index=True)
         with st.expander("展开查看组合分项明细", expanded=resolve_formula_trace_expanded(ui_preferences)):
             for combo in result["formula_trace"]["combinations"]:
                 st.markdown(f"**{combo['name']}**")
                 st.caption(combo["formula"])
-                st.dataframe(combo["details"], use_container_width=True, hide_index=True)
+                st.dataframe(combo["details"], hide_index=True)
     elif selected_view == "forces":
         st.subheader("平管内力")
-        st.dataframe(build_internal_force_rows(result["internal_forces"]), use_container_width=True, hide_index=True)
+        st.dataframe(build_internal_force_rows(result["internal_forces"]), hide_index=True)
         st.subheader("强度控制")
-        st.dataframe(result["stress_checks"]["rows"], use_container_width=True, hide_index=True)
+        st.dataframe(result["stress_checks"]["rows"], hide_index=True)
     elif selected_view == "checks":
         st.subheader("稳定与挠度")
         col1, col2 = st.columns(2)
-        col1.dataframe([result["stability_checks"]], use_container_width=True, hide_index=True)
-        col2.dataframe([result["deflection_check"]], use_container_width=True, hide_index=True)
+        col1.dataframe([result["stability_checks"]], hide_index=True)
+        col2.dataframe([result["deflection_check"]], hide_index=True)
         st.subheader("支墩验算")
         left_col, right_col = st.columns(2)
         left_col.markdown("**左支墩**")
-        left_col.dataframe(result["pier_checks"]["details"]["left_pier"], use_container_width=True, hide_index=True)
+        left_col.dataframe(result["pier_checks"]["details"]["left_pier"], hide_index=True)
         right_col.markdown("**右支墩**")
-        right_col.dataframe(result["pier_checks"]["details"]["right_pier"], use_container_width=True, hide_index=True)
+        right_col.dataframe(result["pier_checks"]["details"]["right_pier"], hide_index=True)
     elif selected_view == "formula":
         render_formula_trace(result["formula_trace"], expanded=resolve_formula_trace_expanded(ui_preferences))
     else:
@@ -374,6 +374,16 @@ def build_action_rows(rows: list[dict]) -> list[dict]:
     ]
 
 
+def stringify_display_rows(rows: list[dict[str, Any]]) -> list[dict[str, str]]:
+    return [{key: stringify_display_value(value) for key, value in row.items()} for row in rows]
+
+
+def stringify_display_value(value: Any) -> str:
+    if value is None:
+        return "-"
+    return str(value)
+
+
 def render_input_summary(project: ProjectInput) -> None:
     st.subheader("工程信息")
     meta_rows = [
@@ -382,7 +392,7 @@ def render_input_summary(project: ProjectInput) -> None:
         {"项目": "设计人", "取值": project.meta.designer or "-"},
         {"项目": "备注", "取值": project.meta.notes or "-"},
     ]
-    st.dataframe(meta_rows, use_container_width=True, hide_index=True)
+    st.dataframe(stringify_display_rows(meta_rows), hide_index=True)
 
     left_col, right_col = st.columns(2)
     with left_col:
@@ -403,7 +413,7 @@ def render_input_summary(project: ProjectInput) -> None:
             {"项目": "线膨胀系数 α", "取值": project.material.thermal_expansion_per_c, "单位": "/°C"},
             {"项目": "泊松比", "取值": project.material.poisson_ratio, "单位": ""},
         ]
-        st.dataframe(geometry_rows, use_container_width=True, hide_index=True)
+        st.dataframe(stringify_display_rows(geometry_rows), hide_index=True)
 
     with right_col:
         st.subheader("支承与加劲环")
@@ -415,7 +425,7 @@ def render_input_summary(project: ProjectInput) -> None:
             {"项目": "等效形心半径 Rk", "取值": project.support_scheme.shell_centroid_radius_mm, "单位": "mm"},
             {"项目": "加劲环等效惯性矩 Jk", "取值": project.support_scheme.stiffener_equivalent_inertia_mm4, "单位": "mm4"},
         ]
-        st.dataframe(support_rows, use_container_width=True, hide_index=True)
+        st.dataframe(stringify_display_rows(support_rows), hide_index=True)
 
     left_col, right_col = st.columns(2)
     with left_col:
@@ -443,7 +453,7 @@ def render_input_summary(project: ProjectInput) -> None:
             {"项目": "漂流物流速 V", "取值": project.actions.drift_velocity_m_s, "单位": "m/s"},
             {"项目": "撞击时间 t", "取值": project.actions.drift_time_s, "单位": "s"},
         ]
-        st.dataframe(action_rows, use_container_width=True, hide_index=True)
+        st.dataframe(stringify_display_rows(action_rows), hide_index=True)
 
     with right_col:
         st.subheader("组合系数")
@@ -467,10 +477,13 @@ def render_input_summary(project: ProjectInput) -> None:
                 }
             )
         st.dataframe(
-            [{"作用": "重要性系数 γ0", "γQ": project.combination_factors.importance_factor, "φ": "", "ψ": ""},
-             {"作用": "永久作用分项系数 γG", "γQ": project.combination_factors.permanent_factor, "φ": "", "ψ": ""}]
-            + factor_rows,
-            use_container_width=True,
+            stringify_display_rows(
+                [
+                    {"作用": "重要性系数 γ0", "γQ": project.combination_factors.importance_factor, "φ": "", "ψ": ""},
+                    {"作用": "永久作用分项系数 γG", "γQ": project.combination_factors.permanent_factor, "φ": "", "ψ": ""},
+                ]
+                + factor_rows
+            ),
             hide_index=True,
         )
 
@@ -494,7 +507,7 @@ def render_input_summary(project: ProjectInput) -> None:
         {"项目": "附加 X 向弯矩", "取值": project.pier_foundation.additional_moment_x_kn_m, "单位": "kN·m"},
         {"项目": "附加 Y 向弯矩", "取值": project.pier_foundation.additional_moment_y_kn_m, "单位": "kN·m"},
     ]
-    st.dataframe(pier_rows, use_container_width=True, hide_index=True)
+    st.dataframe(stringify_display_rows(pier_rows), hide_index=True)
 
 
 def build_combination_rows(rows: list[dict]) -> list[dict]:
@@ -553,7 +566,7 @@ def render_formula_trace(trace: dict, *, expanded: bool = False) -> None:
     for item in trace["combinations"]:
         with st.expander(item["name"], expanded=expanded):
             render_formula_card("组合总式", item["combo_type"], item["formula"], item["substitution"], item["result"])
-            st.dataframe(item["details"], use_container_width=True, hide_index=True)
+            st.dataframe(item["details"], hide_index=True)
 
     st.subheader("内力公式")
     for item in trace["internal_forces"]:

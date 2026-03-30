@@ -24,3 +24,13 @@ def test_failed_settings_save_keeps_session_template_valid(tmp_path: Path) -> No
     assert state["shared_template"] == shared_template
     assert state[SETTINGS_TEMPLATE_DRAFT_KEY] == shared_template
     assert not (tmp_path / "shared_template.json").exists()
+
+
+def test_runtime_pages_no_longer_use_deprecated_container_width_api() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+
+    for path in (
+        repo_root / "app.py",
+        repo_root / "src/cecs214_plain_pipe/ui/pages/settings.py",
+    ):
+        assert "use_container_width" not in path.read_text(encoding="utf-8")
